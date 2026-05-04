@@ -125,7 +125,7 @@ extern "C" fn ReadFlash() {
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-extern "C" fn FlashSize() {
+extern "C" fn VendorFunction_FlashSize() {
     core::arch::naked_asm!(
         "l32r a1, STACK_PTR",
         "call4 FlashSize_impl",
