@@ -251,6 +251,19 @@ pub unsafe extern "C" fn FlashSize_impl() -> i32 {
     flash::get_flash_size()
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn ChipRevision_impl() -> i32 {
+    if state().is_none() {
+        return ERROR_BASE_INTERNAL - 1;
+    };
+
+    let revision = efuse::read_chip_revision() as i32;
+
+    dprintln!("CHIP REVISION: {}", revision);
+
+    revision
+}
+
 pub struct Decompressor {
     decompressor: TinflDecompressor,
     output: OutBuffer,
