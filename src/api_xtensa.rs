@@ -125,10 +125,21 @@ extern "C" fn ReadFlash() {
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-extern "C" fn FlashSize() {
+extern "C" fn VendorFunc_FlashSize() {
     core::arch::naked_asm!(
         "l32r a1, STACK_PTR",
         "call4 FlashSize_impl",
+        "mov.n a2, a6",
+        "break 1, 15",
+    );
+}
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+extern "C" fn VendorFunc_ChipRevision() {
+    core::arch::naked_asm!(
+        "l32r a1, STACK_PTR",
+        "call4 ChipRevision_impl",
         "mov.n a2, a6",
         "break 1, 15",
     );

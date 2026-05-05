@@ -45,6 +45,11 @@ pub unsafe extern "C" fn ReadFlash(adr: u32, sz: u32, buf: *mut u8) -> i32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn FlashSize() -> i32 {
+pub unsafe extern "C" fn VendorFunc_FlashSize() -> i32 {
     crate::FlashSize_impl()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn VendorFunc_ChipRevision() -> i32 {
+    crate::ChipRevision_impl()
 }
