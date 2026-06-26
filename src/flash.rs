@@ -153,8 +153,28 @@ pub fn write_flash(address: u32, data: &[u8]) -> i32 {
     if data.is_empty() {
         return 0;
     }
-    let len = data.len() as u32;
-    unsafe { esp_rom_spiflash_write(address, data.as_ptr(), len) }
+
+    // The ROM write needs a word-aligned length; pad a sub-word tail with 0xFF.
+    let aligned_len = data.len() & !3;
+    if aligned_len > 0 {
+        let res = unsafe { esp_rom_spiflash_write(address, data.as_ptr(), aligned_len as u32) };
+        if res != 0 {
+            return res;
+        }
+    }
+
+    let tail_len = data.len() & 3;
+    if tail_len == 0 {
+        return 0;
+    }
+
+    let mut word = [0xFFu8; 4];
+    let mut i = 0;
+    while i < tail_len {
+        unsafe { *word.as_mut_ptr().add(i) = *data.as_ptr().add(aligned_len + i) };
+        i += 1;
+    }
+    unsafe { esp_rom_spiflash_write(address + aligned_len as u32, word.as_ptr(), 4) }
 }
 
 pub fn read_flash(address: u32, data: &mut [u8]) -> i32 {
