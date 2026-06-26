@@ -121,10 +121,18 @@ pub fn attach() -> i32 {
         init_ospi_funcs();
     }
 
+    // Enable the command phase for SPI1 user transactions. In the reset-run case
+    // (how probe-rs loads the stub) this bit is not set by default, so ROM
+    // write/erase commands (incl. write-enable) would go out without a command
+    // byte and silently no-op, leaving the old firmware in place.
+    const USER_COMMAND: u32 = 1 << 31;
+    let user_reg = crate::chip::MEM_SPI.user();
+    write_spi_reg(user_reg, read_spi_reg(user_reg) | USER_COMMAND);
+
     let config_result = unsafe {
         esp_rom_spiflash_config_param(
             0,
-            crate::properties::MAX_FLASH_SIZE,    // total_size
+            flash_size(),                         // total_size (detected, capped)
             crate::properties::FLASH_BLOCK_SIZE,  // block_size
             crate::properties::FLASH_SECTOR_SIZE, // sector_size
             crate::properties::PAGE_SIZE,         // page_size
@@ -153,8 +161,28 @@ pub fn write_flash(address: u32, data: &[u8]) -> i32 {
     if data.is_empty() {
         return 0;
     }
-    let len = data.len() as u32;
-    unsafe { esp_rom_spiflash_write(address, data.as_ptr(), len) }
+
+    // The ROM write needs a word-aligned length; pad a sub-word tail with 0xFF.
+    let aligned_len = data.len() & !3;
+    if aligned_len > 0 {
+        let res = unsafe { esp_rom_spiflash_write(address, data.as_ptr(), aligned_len as u32) };
+        if res != 0 {
+            return res;
+        }
+    }
+
+    let tail_len = data.len() & 3;
+    if tail_len == 0 {
+        return 0;
+    }
+
+    let mut word = [0xFFu8; 4];
+    let mut i = 0;
+    while i < tail_len {
+        unsafe { *word.as_mut_ptr().add(i) = *data.as_ptr().add(aligned_len + i) };
+        i += 1;
+    }
+    unsafe { esp_rom_spiflash_write(address + aligned_len as u32, word.as_ptr(), 4) }
 }
 
 pub fn read_flash(address: u32, data: &mut [u8]) -> i32 {
@@ -276,12 +304,15 @@ fn spi_send_command(command: u32, len: u32) -> u32 {
     value & ((1 << len) - 1)
 }
 
-pub fn get_flash_size() -> i32 {
+fn read_flash_id() -> u32 {
     const RDID: u32 = 0x9F;
-    let id = spi_send_command(RDID, 24);
+    spi_send_command(RDID, 24)
+}
 
-    const KB: i32 = 1024;
-    const MB: i32 = 1024 * KB;
+/// Flash size in bytes from a JEDEC RDID response, or `None` if unknown.
+fn decode_flash_size(id: u32) -> Option<u32> {
+    const KB: u32 = 1024;
+    const MB: u32 = 1024 * KB;
 
     // https://github.com/espressif/esptool/blob/8363cae8eca42ec70e26edfe4d1727549d6ce578/esptool/cmds.py#L55-L98
     let [manufacturer, _, _, _] = id.to_le_bytes();
@@ -289,41 +320,57 @@ pub fn get_flash_size() -> i32 {
     if manufacturer == ADESTO_VENDOR_ID {
         let [_, capacity, _, _] = id.to_le_bytes();
         match capacity & 0x1F {
-            0x04 => 512 * KB,
-            0x05 => 1 * MB,
-            0x06 => 2 * MB,
-            0x07 => 4 * MB,
-            0x08 => 8 * MB,
-            0x09 => 16 * MB,
-            _ => -1,
+            0x04 => Some(512 * KB),
+            0x05 => Some(1 * MB),
+            0x06 => Some(2 * MB),
+            0x07 => Some(4 * MB),
+            0x08 => Some(8 * MB),
+            0x09 => Some(16 * MB),
+            _ => None,
         }
     } else {
         let [_, _, capacity, _] = id.to_le_bytes();
         match capacity {
-            0x12 => 256 * KB,
-            0x13 => 512 * KB,
-            0x14 => 1 * MB,
-            0x15 => 2 * MB,
-            0x16 => 4 * MB,
-            0x17 => 8 * MB,
-            0x18 => 16 * MB,
-            0x19 => 32 * MB,
-            0x1A => 64 * MB,
-            0x1B => 128 * MB,
-            0x1C => 256 * MB,
-            0x20 => 64 * MB,
-            0x21 => 128 * MB,
-            0x22 => 256 * MB,
-            0x32 => 256 * KB,
-            0x33 => 512 * KB,
-            0x34 => 1 * MB,
-            0x35 => 2 * MB,
-            0x36 => 4 * MB,
-            0x37 => 8 * MB,
-            0x38 => 16 * MB,
-            0x39 => 32 * MB,
-            0x3A => 64 * MB,
-            _ => -1,
+            0x12 => Some(256 * KB),
+            0x13 => Some(512 * KB),
+            0x14 => Some(1 * MB),
+            0x15 => Some(2 * MB),
+            0x16 => Some(4 * MB),
+            0x17 => Some(8 * MB),
+            0x18 => Some(16 * MB),
+            0x19 => Some(32 * MB),
+            0x1A => Some(64 * MB),
+            0x1B => Some(128 * MB),
+            0x1C => Some(256 * MB),
+            0x20 => Some(64 * MB),
+            0x21 => Some(128 * MB),
+            0x22 => Some(256 * MB),
+            0x32 => Some(256 * KB),
+            0x33 => Some(512 * KB),
+            0x34 => Some(1 * MB),
+            0x35 => Some(2 * MB),
+            0x36 => Some(4 * MB),
+            0x37 => Some(8 * MB),
+            0x38 => Some(16 * MB),
+            0x39 => Some(32 * MB),
+            0x3A => Some(64 * MB),
+            _ => None,
+        }
+    }
+}
+
+/// Detected flash size, capped to `MAX_FLASH_SIZE`. Unknown/oversized parts use the cap.
+pub fn flash_size() -> u32 {
+    let max = crate::properties::MAX_FLASH_SIZE;
+    match decode_flash_size(read_flash_id()) {
+        Some(size) if size > max => {
+            crate::dprintln!("Flash size {} exceeds cap {}, capping", size, max);
+            max
+        }
+        Some(size) => size,
+        None => {
+            crate::dprintln!("Unknown flash ID, assuming cap {}", max);
+            max
         }
     }
 }

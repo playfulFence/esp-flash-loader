@@ -248,7 +248,7 @@ pub unsafe extern "C" fn FlashSize_impl() -> i32 {
         return ERROR_BASE_INTERNAL - 1;
     };
 
-    flash::get_flash_size()
+    flash::flash_size() as i32
 }
 
 #[no_mangle]
