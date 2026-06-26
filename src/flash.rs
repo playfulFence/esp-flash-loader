@@ -121,6 +121,14 @@ pub fn attach() -> i32 {
         init_ospi_funcs();
     }
 
+    // Enable the command phase for SPI1 user transactions. In the reset-run case
+    // (how probe-rs loads the stub) this bit is not set by default, so ROM
+    // write/erase commands (incl. write-enable) would go out without a command
+    // byte and silently no-op, leaving the old firmware in place.
+    const USER_COMMAND: u32 = 1 << 31;
+    let user_reg = crate::chip::MEM_SPI.user();
+    write_spi_reg(user_reg, read_spi_reg(user_reg) | USER_COMMAND);
+
     let config_result = unsafe {
         esp_rom_spiflash_config_param(
             0,
