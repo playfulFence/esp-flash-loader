@@ -40,6 +40,22 @@ pub const ROM_DATA_TABLES: RomDataTables = &[
         bss_start: 0x4FC1C9EC,
         bss_end: 0x4FC1CAEC,
     },
+    RomDataTable {
+        // ECO6
+        min_revision: 301,
+        data_start: 0x4FC1C8F8,
+        data_end: 0x4FC1CA84,
+        bss_start: 0x4FC1CA84,
+        bss_end: 0x4FC1CB84,
+    },
+    RomDataTable {
+        // ECO7
+        min_revision: 302,
+        data_start: 0x4FC1C9D8,
+        data_end: 0x4FC1CB64,
+        bss_start: 0x4FC1CB64,
+        bss_end: 0x4FC1CC64,
+    },
 ];
 
 pub const ROM_TABLE_ENTRY_SIZE: u32 = 12;
