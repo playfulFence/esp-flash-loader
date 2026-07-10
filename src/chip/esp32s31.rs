@@ -4,7 +4,7 @@ use crate::{
     rom::{RomDataTable, RomDataTables},
 };
 
-// Max of 64MB
+// Max of 256MB
 pub const MAX_FLASH_SIZE: u32 = 0x10000000;
 
 // No ROM data init tables needed; ROM boot already initializes its own data.
